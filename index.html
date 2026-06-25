@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDN Impedance calculator</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet" href="https://pyscript.net/releases/2024.1.1/core.css">
+    <script type="module" src="https://pyscript.net/releases/2024.1.1/core.js"></script>
+
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+
+    <style>
+        .js-plotly-plot .text-html--linear .modebar {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            position: absolute !important;
+            top: 2px !important;
+            right: 2px !important;
+        }
+
+        .modebar-group {
+            display: flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+        }
+
+        .modebar-btn {
+            padding: 4px !important;
+        }
+
+        /* PRINT / PDF GENERATION STYLES */
+        @media print {
+            @page {
+                size: portrait;
+                margin: 12mm 15mm 12mm 15mm;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+                background: #ffffff !important;
+                color: #000000 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+
+            #profile-manager-block,
+            #scope-toggle-btn,
+            .flex.justify-end,
+            .help-btn,
+            #help-modal,
+            button {
+                display: none !important;
+            }
+
+            .max-w-7xl {
+                max-width: 100% !important;
+                width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+
+            .bg-\[\#1a202c\],
+            .bg-\[\#121620\] {
+                background: #ffffff !important;
+                border: 1px solid #e2e8f0 !important;
+                color: #0f172a !important;
+                box-shadow: none !important;
+                padding: 12px !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+
+            input,
+            select {
+                background: #ffffff !important;
+                color: #0f172a !important;
+                border: 1px solid #94a3b8 !important;
+                pointer-events: none !important;
+            }
+
+            h1,
+            h2,
+            span,
+            label {
+                color: #0f172a !important;
+            }
+
+            #scope-container:not(.hidden) {
+                display: block !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+            }
+
+            #bode-loading,
+            #transient-loading {
+                display: none !important;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-[#0f1319] text-gray-200 p-6 font-sans">
+
+    <div id="help-modal"
+        class="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center hidden"
+        onclick="window.close_modal_outside(event)">
+        <div class="bg-[#1a202c] border-2 border-gray-700 w-full max-w-2xl p-6 rounded-xl shadow-2xl relative animate-in fade-in zoom-in-95 duration-150"
+            onclick="event.stopPropagation()">
+            <button onclick="window.close_help_modal()"
+                class="absolute top-4 right-4 text-gray-400 hover:text-white font-bold text-lg p-1">✕</button>
+            <h3 id="modal-title" class="text-base font-bold uppercase tracking-wide mb-3">Help Documentation</h3>
+            <div id="modal-body"
+                class="font-mono text-xs text-gray-300 bg-[#121620] border border-gray-800 p-4 rounded-lg leading-relaxed whitespace-pre-line overflow-y-auto max-h-[70vh]">
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        <header class="flex justify-between items-center pb-4 border-b border-[#2d3748]">
+            <div>
+                <h1 class="text-2xl font-bold text-[#e2e8f0]">PDN Impedance calculator</h1>
+                <p class="text-xs text-[#a0aec0]">Real-time PDN with transient plot</p>
+            </div>
+
+            <div id="profile-manager-block"
+                class="flex items-center space-x-2 bg-[#1a202c] px-4 py-2 rounded-lg border border-[#2d3748] shadow-md">
+                <span class="text-[10px] font-bold text-[#a0aec0] uppercase tracking-wider mr-1">File Actions:</span>
+                <button onclick="window.trigger_save_profile()"
+                    class="bg-[#2d3748] hover:bg-[#4a5568] text-white text-xs font-semibold px-3 py-1.5 rounded transition cursor-pointer border border-[#4a5568]">
+                    Save JSON
+                </button>
+                <label
+                    class="bg-[#2b6cb0] hover:bg-[#2b4c80] text-white text-xs font-semibold px-3 py-1.5 rounded transition cursor-pointer border border-[#2b4c80] text-center inline-block">
+                    Load JSON
+                    <input type="file" id="profile-upload-input" onchange="window.trigger_load_profile(this)"
+                        class="hidden" accept=".json">
+                </label>
+                <button onclick="window.trigger_pdf_report()"
+                    class="bg-[#319795] hover:bg-[#287e7c] text-white text-xs font-semibold px-3 py-1.5 rounded transition cursor-pointer border border-[#287e7c] flex items-center space-x-1 shadow">
+                    <span>Export PDF Report</span>
+                </button>
+            </div>
+        </header>
+
+        <div class="space-y-4">
+            <div class="bg-[#1a202c] p-4 rounded-lg shadow-xl border border-[#2d3748] relative overflow-hidden">
+                <div id="bode-loading"
+                    class="absolute inset-0 bg-[#121620]/95 z-50 flex flex-col items-center justify-center space-y-3 transition-opacity duration-500">
+                    <div class="w-10 h-10 border-2 border-t-[#00bcff] border-[#2d3748] rounded-full animate-spin"></div>
+                    <p class="text-xs font-mono tracking-widest text-[#00bcff] animate-pulse">Loading...</p>
+                </div>
+                <div id="bode-plot" class="w-full h-[460px]"></div>
+            </div>
+
+            <div class="flex justify-start">
+                <button onclick="window.toggle_scope_view()" id="scope-toggle-btn"
+                    class="flex items-center space-x-2 bg-[#319795] hover:bg-[#287e7c] text-white text-xs font-semibold px-4 py-2 rounded transition cursor-pointer shadow-md">
+                    <span>Show Transient Voltage (IFFT)</span>
+                    <svg id="toggle-icon" class="w-4 h-4 transform transition-transform" fill="none"
+                        stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                    </svg>
+                </button>
+            </div>
+
+            <div id="scope-container"
+                class="hidden transition-all duration-300 ease-in-out bg-[#1a202c] p-4 rounded-lg shadow-xl border border-[#2d3748] relative overflow-hidden">
+                <div id="transient-loading"
+                    class="absolute inset-0 bg-[#121620]/95 z-50 flex flex-col items-center justify-center space-y-3 transition-opacity duration-500">
+                    <div class="w-10 h-10 border-2 border-t-[#319795] border-[#2d3748] rounded-full animate-spin"></div>
+                    <p class="text-xs font-mono tracking-widest text-[#319795] animate-pulse">INITIALIZING MATRIX
+                        ENGINE...</p>
+                </div>
+                <div id="transient-plot" class="w-full h-[380px]"></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-[#1a202c] p-4 rounded-lg shadow-xl border border-[#2d3748] flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-xs font-bold text-[#b83280] uppercase tracking-wide">1. PDN Target Impedance
+                        </h2>
+                        <button onclick="window.open_help_modal('target-z')"
+                            class="help-btn w-6 h-6 rounded-full bg-[#b83280] text-white text-xs font-extrabold flex items-center justify-center hover:bg-[#d53f8c] shadow transition cursor-pointer"
+                            title="View Formulas">?</button>
+                    </div>
+
+                    <div class="grid grid-cols-4 gap-3 items-end">
+                        <div>
+                            <label class="block text-[10px] font-medium text-[#a0aec0] uppercase">V out (V)</label>
+                            <input id="v-supply" type="number" value="1.2" step="any" oninput="window.update_plot()"
+                                class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#b83280]">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-medium text-[#a0aec0] uppercase">Allowed Ripple
+                                (%)</label>
+                            <input id="ripple-pct" type="number" value="5" step="any" oninput="window.update_plot()"
+                                class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#b83280]">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-medium text-[#a0aec0] uppercase">I transient
+                                (A)</label>
+                            <input id="i-transient" type="number" value="2.0" step="any" oninput="window.update_plot()"
+                                class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-[#b83280]">
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-medium text-cyan-400">Rise Time t_r (ns)</label>
+                            <input id="i-trise" type="number" value="10" step="any" min="1"
+                                oninput="window.update_plot()"
+                                class="mt-1 block w-full bg-[#121620] border border-cyan-800 rounded px-2 py-1.5 text-white text-xs focus:outline-none focus:border-cyan-400 font-semibold">
+                        </div>
+                    </div>
+                </div>
+                <div
+                    class="mt-3 bg-[#121620] border border-[#2d3748] rounded px-3 py-2 flex items-center justify-between">
+                    <span class="text-[11px] font-medium text-[#a0aec0] uppercase">Calculated Target Z:</span>
+                    <span id="calculated-z-display" class="font-mono text-sm font-bold text-[#b83280]">-- Ω</span>
+                </div>
+            </div>
+
+            <div class="bg-[#1a202c] p-4 rounded-lg shadow-xl border border-[#2d3748]">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-xs font-bold text-[#cca43b] uppercase tracking-wide">2. DC/DC Buck VRM Configuration
+                    </h2>
+                    <button onclick="window.open_help_modal('vrm')"
+                        class="help-btn w-6 h-6 rounded-full bg-[#cca43b] text-white text-xs font-extrabold flex items-center justify-center hover:bg-[#e5c158] shadow transition cursor-pointer"
+                        title="View Formulas">?</button>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3 mb-2">
+                    <div>
+                        <label class="block text-[10px] font-medium text-[#a0aec0]">Inductor L (µH)</label>
+                        <input id="vrm-l" type="number" value="1.0" step="any" oninput="window.update_plot()"
+                            class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2.5 py-1 text-white text-xs focus:outline-none focus:border-[#cca43b]">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-medium text-[#a0aec0]">Inductor R_dcr (mΩ)</label>
+                        <input id="vrm-rdcr" type="number" value="15" step="any" oninput="window.update_plot()"
+                            class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2.5 py-1 text-white text-xs focus:outline-none focus:border-[#cca43b]">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-medium text-[#a0aec0]">Loop F_c (kHz)</label>
+                        <input id="vrm-fc" type="number" value="50" step="any" oninput="window.update_plot()"
+                            class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2.5 py-1 text-white text-xs focus:outline-none focus:border-[#cca43b]">
+                    </div>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    <div>
+                        <label class="block text-[10px] font-medium text-[#a0aec0]">Bulk C (µF)</label>
+                        <input id="vrm-cout" type="number" value="100" step="any" oninput="window.update_plot()"
+                            class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#cca43b]">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-medium text-[#a0aec0]">Bulk ESR (mΩ)</label>
+                        <input id="vrm-cesr" type="number" value="8" step="any" oninput="window.update_plot()"
+                            class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#cca43b]">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-medium text-[#a0aec0]">Bulk ESL (nH)</label>
+                        <input id="vrm-cesl" type="number" value="4" step="any" oninput="window.update_plot()"
+                            class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-[#cca43b]">
+                    </div>
+                    <div>
+                        <label class="block text-[10px] font-medium text-emerald-400">Quantity (N)</label>
+                        <input id="vrm-cqty" type="number" value="1" min="1" step="1" oninput="window.update_plot()"
+                            class="mt-1 block w-full bg-[#121620] border border-emerald-600 rounded px-2 py-1 text-white font-bold text-xs focus:outline-none focus:border-emerald-400">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-[#1a202c] p-5 rounded-lg shadow-xl border border-[#2d3748]">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-xs font-bold text-[#319795] uppercase tracking-wide">3. Embedded Plane Capacitance</h2>
+                <button onclick="window.open_help_modal('plane')"
+                    class="help-btn w-6 h-6 rounded-full bg-[#319795] text-white text-xs font-extrabold flex items-center justify-center hover:bg-[#3caea3] shadow transition cursor-pointer"
+                    title="View Formulas">?</button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                <div>
+                    <label class="block text-[11px] font-medium text-[#a0aec0]">Dielectric Constant (ε_r / Dk)</label>
+                    <input id="plane-er" type="number" value="4.3" step="any" min="0.1" oninput="window.update_plot()"
+                        class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#319795]">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-medium text-[#a0aec0]">Dielectric thickness between GND and
+                        plane h (mm)</label>
+                    <input id="plane-h" type="number" value="0.1" step="any" min="0.001" oninput="window.update_plot()"
+                        class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#319795]">
+                </div>
+                <div>
+                    <label class="block text-[11px] font-medium text-[#a0aec0]">Plane Overlap Area (mm²)</label>
+                    <input id="plane-area" type="number" value="2500" step="any" min="0" oninput="window.update_plot()"
+                        class="mt-1 block w-full bg-[#121620] border border-[#2d3748] rounded px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#319795]">
+                </div>
+                <div
+                    class="bg-[#121620] border border-[#2d3748] rounded px-3 py-2 h-[38px] flex items-center justify-between">
+                    <span class="text-[11px] font-medium text-[#a0aec0] uppercase">Plane Value:</span>
+                    <span id="plane-cap-display" class="font-mono text-xs font-bold text-[#319795]">-- nF</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-[#1a202c] p-6 rounded-lg shadow-xl border border-[#2d3748] space-y-4">
+            <div class="flex justify-between items-center border-b border-[#2d3748] pb-3">
+                <div class="flex items-center space-x-3">
+                    <h2 class="text-sm font-semibold text-[#e2e2e2] uppercase tracking-wider">
+                        4. Cap Decoupling Array
+                    </h2>
+                    <button onclick="window.open_help_modal('decoupling')"
+                        class="help-btn w-6 h-6 rounded-full bg-[#2b6cb0] text-white text-xs font-extrabold flex items-center justify-center hover:bg-[#4299e1] shadow transition cursor-pointer"
+                        title="View Formulas">?</button>
+                </div>
+                <button onclick="window.add_decoupling_row()"
+                    class="flex items-center space-x-1 bg-[#2b6cb0] hover:bg-[#2b4c80] text-white text-xs px-3 py-1.5 rounded transition font-medium cursor-pointer shadow">
+                    <span>+ Add Cap Array</span>
+                </button>
+            </div>
+
+            <div id="decoupling-container" class="space-y-3"></div>
+        </div>
+    </div>
+
+    <py-config>
+        packages = ["numpy", "plotly"]
+    </py-config>
+
+    <script>
+        let rowCounter = 0;
+        let debounceTimer;
+
+        const modalData = {
+            'target-z': {
+                title: "1. Target Impedance Formula & Slew Rate Estimation",
+                body: `[Formula Structure]
+Z_target = (V_supply × Allowed Ripple%) / I_transient
+
+Determining the transient rise time (t_r) for your PDN target calculations involves looking at your specific load's switching behavior. Since it is rarely a single, neat number in a datasheet, use one of three main approaches:
+
+1. The Component Datasheet / Hardware Design Guide
+Look for sections labeled "Core Rail Transient Requirements" or "Dynamic Load Step". You need two interrelated metrics:
+  • The Slew Rate (dI/dt): Typically defined in A/ns or A/µs.
+  • The Step Current (ΔI): The maximum change in current during worst-case power state transitions.
+
+  Calculate the effective rise time (t_r) using:
+  t_r = ΔI / Slew Rate
+  
+  Example: If ΔI = 2.0 A and Max Slew Rate = 0.2 A/ns, then:
+  t_r = 2.0 A / 0.2 A/ns = 10 ns
+
+2. Measurement via High-Bandwidth Oscilloscope
+If you have prototype hardware, you can measure it directly:
+  • Setup: Utilize a high-bandwidth current probe (or measure the voltage drop across a known, ultra-low-inductance inline shunt resistor right at the bypass capacitor entry point).
+  • Measurement: Trigger on the load-step event (e.g., heavy code benchmarks). Measure the time it takes the waveform to rise from 10% to 90% of its final peak current value.
+  • Note: Ensure your scope's analog bandwidth and probe limits aren't limiting the measurement, otherwise you will see the scope's own rise time.
+
+3. Estimating by Application / Technology Class
+If the IC datasheet lacks specific dI/dt metrics, estimate t_r based on the technology generation:
+
+  Load Type / Technology             Typical Slew Rate      Estimated Rise Time (t_r)
+  -----------------------------------------------------------------------------------
+  Standard MCUs / Low-Speed IO       0.001 - 0.01 A/ns      50 ns - 200 ns
+  High-Speed DDR Interfaces          0.05  - 0.2  A/ns      5 ns  - 15 ns
+  Gbit Ethernet / PCIe Gen3/4        0.1   - 0.5  A/ns      2 ns  - 10 ns
+  Core SoCs / High-End FPGAs         1.0   - 10+  A/ns      0.2 ns - 2 ns
+
+  Rule of Thumb for Clock Frequency:
+  If you only know the maximum clock operating frequency (F_clk), a safe baseline estimation for the fastest gate transition is 10% of the clock period:
+  t_r ≈ 0.1 × (1 / F_clk)
+  For an internal fabric running at 100 MHz (10 ns period), this yields a baseline of a 1 ns rise time.`
+            },
+            'vrm': {
+                title: "2. Closed-Loop VRM Impedance Co-Simulation",
+                body: `[Formula Structure]\nZ_vrm_open = Z_inductor + Z_bulk_total\nZ_vrm_closed = Z_vrm_open / (1 + T(s))\nwhere T(s) = 2*π*F_c / s\n
+                [Calculation Logic]\n
+                1. Calculating open loop impedance - when frequency rises above loop capabillty, impedance equals inductor and bulk capacitor impedances.\n
+                2. Close loop - dc/dc actively tries to stabilize Vout, so it leads to 0.\n
+                s = sigma + j * omega$$\n
+                We calculate steady-state AC frequency response (the Bode plot spectrum), it assumes the system is stable and undamped (sigma = 0). Therefore, the script subtitutes:\n
+                s = omega * j = j* 2*pi*F
+                `
+            },
+            'plane': {
+                title: "3. Embedded Interplanar Cavity Capacitance",
+                body: `[Formula Structure]\nC_plane = (ε_0 × ε_r × Area) / h\nZ_plane = R_vrm_plane + 1 / (s × C_plane)\n
+                [Calculation Logic]\n
+                Basically we calculate classic capacitor with dielectric h between two planes\n
+                s = jw
+                R_vrm_plane hardcoded as 1.5mOhm`
+            },
+            'decoupling': {
+                title: "4. Capacitors impedance",
+                body: `[Formula Structure]\nZ_branch_i = (ESR_i / N) + s × (ESL_i / N) + 1 / (s × C_i × N)\n
+                [Calculation Logic]\n
+                Straightforward calculation Z_cap = 1/j2piFC + Z_esl = j2pifl + esr
+                `
+            }
+        };
+
+        function open_help_modal(key) {
+            const modal = document.getElementById('help-modal');
+            const title = document.getElementById('modal-title');
+            const body = document.getElementById('modal-body');
+            if (modalData[key]) {
+                title.innerText = modalData[key].title;
+                body.innerText = modalData[key].body;
+                modal.classList.remove('hidden');
+            }
+        }
+        function close_help_modal() { document.getElementById('help-modal').classList.add('hidden'); }
+        function close_modal_outside(event) { close_help_modal(); }
+
+        window.open_help_modal = open_help_modal;
+        window.close_help_modal = close_help_modal;
+        window.close_modal_outside = close_modal_outside;
+
+        function debouncedUpdate() {
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => { if (window.update_plot_core) window.update_plot_core(); }, 250);
+        }
+        window.update_plot = debouncedUpdate;
+
+        const js_case_library = {
+            "01005": {"esr": 20.0, "esl": 0.1},
+            "0201":  {"esr": 20.0, "esl": 0.2},
+            "0402":  {"esr": 20.0,  "esl": 0.2},
+            "0603":  {"esr": 10.0,  "esl": 0.3},
+            "0805":  {"esr": 10.0,  "esl": 0.4},
+            "1206":  {"esr": 10.0,  "esl": 0.9},
+            "1210":  {"esr": 10.0,  "esl": 0.9},
+            "1515":  {"esr": 10.0,  "esl": 0.5}
+        }
+
+        function toggle_scope_view() {
+            const container = document.getElementById('scope-container');
+            const btn = document.getElementById('scope-toggle-btn');
+            const icon = document.getElementById('toggle-icon');
+            if (container.classList.contains('hidden')) {
+                container.classList.remove('hidden');
+                icon.classList.add('rotate-180');
+                btn.firstElementChild.innerText = "Hide Transient Voltage Scope (IFFT)";
+                if (window.Plotly) Plotly.relayout('transient-plot', { autosize: true });
+            } else {
+                container.classList.add('hidden');
+                icon.classList.remove('rotate-180');
+                btn.firstElementChild.innerText = "Show Transient Voltage Scope (IFFT)";
+            }
+        }
+        window.toggle_scope_view = toggle_scope_view;
+
+function setPlotsTheme(isPrint) {
+            if (!window.Plotly) return;
+            
+            const printLayoutUpdate = {
+                'paper_bgcolor': '#ffffff', 
+                'plot_bgcolor': '#ffffff',
+                'title.font.color': '#0f172a',
+                'xaxis.gridcolor': '#cbd5e1', 
+                'yaxis.gridcolor': '#cbd5e1',
+                'xaxis.tickfont.color': '#0f172a', 
+                'yaxis.tickfont.color': '#0f172a',
+                'xaxis.title.font.color': '#0f172a', 
+                'yaxis.title.font.color': '#0f172a',
+                'legend.font.color': '#0f172a',
+                'legend.bgcolor': 'rgba(255, 255, 255, 0.85)', // Force light background for print legibility
+                width: 650, 
+                height: 420, 
+                margin: { t: 65, b: 65, l: 75, r: 35 }, 
+                autosize: false
+            };
+            
+            const darkLayoutUpdate = {
+                'paper_bgcolor': '#1a202c', 
+                'plot_bgcolor': '#121620',
+                'title.font.color': '#e2e8f0',
+                'xaxis.gridcolor': '#2d3748', 
+                'yaxis.gridcolor': '#2d3748',
+                'xaxis.tickfont.color': '#a0aec0', 
+                'yaxis.tickfont.color': '#a0aec0',
+                'xaxis.title.font.color': '#a0aec0',
+                'yaxis.title.font.color': '#a0aec0',
+                'legend.font.color': '#a0aec0',
+                'legend.bgcolor': 'rgba(15, 19, 25, 0.85)',   // Revert to dark matching app styling
+                width: null, 
+                height: null, 
+                margin: { t: 45, b: 45, l: 55, r: 25 }, 
+                autosize: true
+            };
+            
+            if (isPrint) {
+                Plotly.relayout('bode-plot', printLayoutUpdate);
+                Plotly.relayout('transient-plot', printLayoutUpdate);
+            } else {
+                Plotly.relayout('bode-plot', darkLayoutUpdate);
+                Plotly.relayout('transient-plot', darkLayoutUpdate);
+            }
+        }
+        window.trigger_pdf_report = function () { setPlotsTheme(true); setTimeout(() => { window.print(); }, 300); };
+        window.addEventListener('afterprint', () => { setPlotsTheme(false); window.update_plot(); });
+
+        function add_decoupling_row(defaultCase = "0603", defaultC = 10, defaultQty = 5, customEsr = null, customEsl = null) {
+            rowCounter++;
+            const container = document.getElementById('decoupling-container');
+            const rowDiv = document.createElement('div');
+            rowDiv.id = `cap-row-${rowCounter}`;
+            rowDiv.className = "decoupling-row grid grid-cols-1 md:grid-cols-6 gap-3 bg-[#121620] p-3 rounded border border-[#2d3748] items-end relative";
+
+            const lookup = js_case_library[defaultCase] || { esr: 4.0, esl: 0.50 };
+            const finalEsr = customEsr !== null ? customEsr : lookup.esr;
+            const finalEsl = customEsl !== null ? customEsl : lookup.esl;
+
+            rowDiv.innerHTML = `
+                <div>
+                    <label class="block text-[10px] font-medium text-[#a0aec0] uppercase">Case Size</label>
+                    <select onchange="window.handle_case_change(this, ${rowCounter})" class="cap-case mt-1 block w-full bg-[#1a202c] border border-[#2d3748] rounded px-2.5 py-1.5 text-white text-xs focus:outline-none focus:border-[#2b6cb0]">
+                        <option value="01005" ${defaultCase === "01005" ? "selected" : ""}>01005</option>
+                        <option value="0201" ${defaultCase === "0201" ? "selected" : ""}>0201</option>
+                        <option value="0402" ${defaultCase === "0402" ? "selected" : ""}>0402</option>
+                        <option value="0603" ${defaultCase === "0603" ? "selected" : ""}>0603</option>
+                        <option value="0805" ${defaultCase === "0805" ? "selected" : ""}>0805</option>
+                        <option value="1206" ${defaultCase === "1206" ? "selected" : ""}>1206</option>
+                        <option value="1210" ${defaultCase === "1210" ? "selected" : ""}>1210</option>
+                        <option value="custom" ${defaultCase === "custom" ? "selected" : ""}>Custom Override</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[10px] font-medium text-[#a0aec0]">Capacitance (µF)</label>
+                    <input type="number" value="${defaultC}" step="any" oninput="window.update_plot()" class="cap-c mt-1 block w-full bg-[#1a202c] border border-[#2d3748] rounded px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#2b6cb0]">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-medium text-[#a0aec0]">ESR (mΩ)</label>
+                    <input type="number" value="${finalEsr}" step="any" oninput="window.handle_manual_input(${rowCounter})" class="cap-esr mt-1 block w-full bg-[#1a202c] border border-[#2d3748] rounded px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#2b6cb0]">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-medium text-[#a0aec0]">ESL (nH)</label>
+                    <input type="number" value="${finalEsl}" step="any" oninput="window.handle_manual_input(${rowCounter})" class="cap-sl mt-1 block w-full bg-[#1a202c] border border-[#2d3748] rounded px-3 py-1.5 text-white text-xs focus:outline-none focus:border-[#2b6cb0]">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-medium text-emerald-400">Quantity (N)</label>
+                    <input type="number" value="${defaultQty}" min="1" step="1" oninput="window.update_plot()" class="cap-qty mt-1 block w-full bg-[#1a202c] border border-emerald-600 rounded px-3 py-1.5 text-white font-bold text-xs focus:outline-none focus:border-emerald-400">
+                </div>
+                <div class="flex justify-end">
+                    <button onclick="window.remove_decoupling_row(${rowCounter})" class="bg-red-950/40 hover:bg-red-900/60 text-red-400 text-xs px-3 py-1.5 rounded transition border border-red-900/50 cursor-pointer h-[34px] w-full text-center">Remove</button>
+                </div>
+            `;
+            container.appendChild(rowDiv);
+            window.update_plot();
+        }
+
+        window.remove_decoupling_row = function (id) { const row = document.getElementById(`cap-row-${id}`); if (row) { row.remove(); window.update_plot(); } };
+        window.handle_case_change = function (selectElem, row_id) {
+            const selected_case = selectElem.value;
+            if (selected_case !== "custom") {
+                const row = document.getElementById(`cap-row-${row_id}`);
+                const spec = js_case_library[selected_case];
+                if (spec) {
+                    row.querySelector('.cap-esr').value = spec.esr;
+                    row.querySelector('.cap-sl').value = spec.esl;
+                }
+            }
+            window.update_plot();
+        };
+        window.handle_manual_input = function (row_id) { document.getElementById(`cap-row-${row_id}`).querySelector('.cap-case').value = "custom"; window.update_plot(); };
+
+        window.trigger_save_profile = function () {
+            const profile = {
+                v_supply: document.getElementById('v-supply').value, ripple_pct: document.getElementById('ripple-pct').value,
+                i_transient: document.getElementById('i-transient').value, i_trise: document.getElementById('i-trise').value,
+                vrm_l: document.getElementById('vrm-l').value, vrm_rdcr: document.getElementById('vrm-rdcr').value, vrm_fc: document.getElementById('vrm-fc').value,
+                vrm_cout: document.getElementById('vrm-cout').value, vrm_cesr: document.getElementById('vrm-cesr').value, vrm_cesl: document.getElementById('vrm-cesl').value, vrm_cqty: document.getElementById('vrm-cqty').value,
+                plane_er: document.getElementById('plane-er').value, plane_h: document.getElementById('plane-h').value, plane_area: document.getElementById('plane-area').value,
+                cap_banks: []
+            };
+            document.querySelectorAll('.decoupling-row').forEach(row => {
+                profile.cap_banks.push({
+                    case: row.querySelector('.cap-case').value, c: row.querySelector('.cap-c').value,
+                    esr: row.querySelector('.cap-esr').value, esl: row.querySelector('.cap-sl').value, qty: row.querySelector('.cap-qty').value
+                });
+            });
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(profile, null, 4));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr); downloadAnchor.setAttribute("download", "pdn_analyzer_config.json");
+            document.body.appendChild(downloadAnchor); downloadAnchor.click(); downloadAnchor.remove();
+        };
+
+        window.trigger_load_profile = function (inputElem) {
+            const file = inputElem.files[0]; if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const profile = JSON.parse(e.target.result);
+                    if (profile.v_supply !== undefined) document.getElementById('v-supply').value = profile.v_supply;
+                    if (profile.ripple_pct !== undefined) document.getElementById('ripple-pct').value = profile.ripple_pct;
+                    if (profile.i_transient !== undefined) document.getElementById('i-transient').value = profile.i_transient;
+                    if (profile.i_trise !== undefined) document.getElementById('i-trise').value = profile.i_trise;
+                    if (profile.vrm_l !== undefined) document.getElementById('vrm-l').value = profile.vrm_l;
+                    if (profile.vrm_rdcr !== undefined) document.getElementById('vrm-rdcr').value = profile.vrm_rdcr;
+                    if (profile.vrm_fc !== undefined) document.getElementById('vrm-fc').value = profile.vrm_fc;
+                    if (profile.vrm_cout !== undefined) document.getElementById('vrm-cout').value = profile.vrm_cout;
+                    if (profile.vrm_cesr !== undefined) document.getElementById('vrm-cesr').value = profile.vrm_cesr;
+                    if (profile.vrm_cesl !== undefined) document.getElementById('vrm-cesl').value = profile.vrm_cesl;
+                    if (profile.vrm_cqty !== undefined) document.getElementById('vrm-cqty').value = profile.vrm_cqty;
+                    if (profile.plane_er !== undefined) document.getElementById('plane-er').value = profile.plane_er;
+                    if (profile.plane_h !== undefined) document.getElementById('plane-h').value = profile.plane_h;
+                    if (profile.plane_area !== undefined) document.getElementById('plane-area').value = profile.plane_area;
+
+                    document.getElementById('decoupling-container').innerHTML = "";
+                    if (Array.isArray(profile.cap_banks)) {
+                        profile.cap_banks.forEach(bank => { add_decoupling_row(bank.case, bank.c, bank.qty, parseFloat(bank.esr), parseFloat(bank.esl)); });
+                    }
+                    window.update_plot();
+                } catch (err) { alert("Error parsing Config JSON layout."); }
+            };
+            reader.readAsText(file); inputElem.value = "";
+        };
+
+        window.addEventListener('DOMContentLoaded', () => {
+            add_decoupling_row("1210", 22, 2);
+            add_decoupling_row("0402", 0.1, 12);
+            add_decoupling_row("0201", 0.01, 8);
+        });
+    </script>
+
+<py-script>
+        import numpy as np
+        import plotly.graph_objects as go
+        from pyscript import document, window
+        from pyodide.ffi import create_proxy
+
+        def calculate_z_vector_decomposed(s_vector, vrm_l, vrm_rdcr, vrm_fc, vrm_cout, vrm_cesr, vrm_cesl, c_plane, cap_rows, freqs_reference):
+            z_ind = (s_vector * vrm_l) + vrm_rdcr
+            z_bulk = (1.0 / (s_vector * vrm_cout)) + vrm_cesr + (s_vector * vrm_cesl)
+            z_ol = (z_ind * z_bulk) / (z_ind + z_bulk)
+            t_s = (2 * np.pi * vrm_fc) / s_vector
+            z_vrm_cl = z_ol / (1.0 + t_s)
+            
+            high_freq_mask = freqs_reference > (3 * vrm_fc)
+            z_vrm_cl[high_freq_mask] = z_ol[high_freq_mask]
+
+            z_plane_only = np.full_like(s_vector, np.inf, dtype=complex)
+            if c_plane > 0:
+                z_plane_only = 1.5e-3 + (1.0 / (s_vector * c_plane))
+
+            y_caps_accum = np.zeros_like(s_vector, dtype=complex)
+            individual_z_tracks = []
+
+            for label, c_val, esr_val, esl_val, qty_val in cap_rows:
+                if c_val > 0:
+                    c_eq = c_val * qty_val
+                    esr_eq = max(esr_val, 1e-4) / qty_val
+                    esl_eq = max(esl_val, 1e-12) / qty_val
+                    z_br = esr_eq + (s_vector * esl_eq) + (1.0 / (s_vector * c_eq))
+                    y_caps_accum += (1.0 / z_br)
+                    individual_z_tracks.append((label, np.abs(z_br)))
+                else:
+                    individual_z_tracks.append((label, np.full_like(freqs_reference, np.inf)))
+
+            y_node = 1.0 / z_vrm_cl
+            if c_plane > 0:
+                y_node += (1.0 / z_plane_only)
+            y_node += y_caps_accum
+            return 1.0 / y_node, z_vrm_cl, z_plane_only, individual_z_tracks
+
+        def update_plot_core(*args, **kwargs):
+            try:
+                v_supply = float(document.getElementById('v-supply').value or 0)
+                ripple_pct = float(document.getElementById('ripple-pct').value or 0)
+                i_transient = float(document.getElementById('i-transient').value or 0)
+                t_rise = float(document.getElementById('i-trise').value or 10) * 1e-9
+
+                vrm_l = float(document.getElementById('vrm-l').value or 0) * 1e-6
+                vrm_rdcr = float(document.getElementById('vrm-rdcr').value or 0) * 1e-3
+                vrm_fc = float(document.getElementById('vrm-fc').value or 0) * 1e3
+
+                vrm_cout_single = float(document.getElementById('vrm-cout').value or 0) * 1e-6
+                vrm_cesr_single = float(document.getElementById('vrm-cesr').value or 0) * 1e-3
+                vrm_cesl_single = float(document.getElementById('vrm-cesl').value or 0) * 1e-9
+                vrm_cqty = max(int(float(document.getElementById('vrm-cqty').value or 1)), 1)
+
+                plane_er = float(document.getElementById('plane-er').value or 1.0)
+                plane_h = float(document.getElementById('plane-h').value or 1.0) * 1e-3
+                plane_area = float(document.getElementById('plane-area').value or 0) * 1e-6
+            except (ValueError, TypeError):
+                return
+
+            target_z = (v_supply * (ripple_pct / 100.0)) / i_transient if i_transient > 0 else 0.0
+            document.getElementById('calculated-z-display').innerHTML = f"{target_z:.3f} Ω" if target_z >= 1 else f"{target_z * 1000:.1f} mΩ"
+
+            c_plane = (8.854187817e-12 * plane_er * plane_area / plane_h) if plane_h > 0 else 0.0
+            document.getElementById('plane-cap-display').innerHTML = f"{c_plane * 1e9:.3f} nF" if c_plane >= 1e-9 else f"{c_plane * 1e12:.1f} pF"
+
+            cap_rows = []
+            row_elements = document.querySelectorAll('.decoupling-row')
+            for i in range(row_elements.length):
+                row = row_elements.item(i)
+                try:
+                    case_txt = row.querySelector('.cap-case').value
+                    c_val_raw = float(row.querySelector('.cap-c').value or 0)
+                    c_val = c_val_raw * 1e-6
+                    esr_val = float(row.querySelector('.cap-esr').value or 0) * 1e-3
+                    esl_val = float(row.querySelector('.cap-sl').value or 0) * 1e-9
+                    qty_val = max(int(float(row.querySelector('.cap-qty').value or 1)), 1)
+                    label_id = f"Bank {i+1} [{case_txt}: {c_val_raw}µF × {qty_val}]"
+                    cap_rows.append((label_id, c_val, esr_val, esl_val, qty_val))
+                except (ValueError, TypeError, AttributeError):
+                    continue
+
+            vrm_cout = vrm_cout_single * vrm_cqty
+            vrm_cesr = max(vrm_cesr_single, 1e-5) / vrm_cqty
+            vrm_cesl = max(vrm_cesl_single, 1e-12) / vrm_cqty
+            
+            if vrm_cout <= 0: 
+                vrm_cout = 1e-12 
+                
+            freqs_log = np.logspace(4, 9, 450) 
+            s_log = 1j * 2 * np.pi * freqs_log 
+            
+            z_total_log, z_vrm_log, z_plane_log, individual_z_tracks = calculate_z_vector_decomposed(
+                s_log, vrm_l, vrm_rdcr, vrm_fc, vrm_cout, vrm_cesr, vrm_cesl, c_plane, cap_rows, freqs_log
+            ) 
+            
+            n_fft = 16384 
+            t_max = 100.0e-6 
+            dt = t_max / n_fft
+            freqs_lin = np.fft.rfftfreq(n_fft, d=dt) 
+            freqs_lin[0] = 1e-3 
+            s_lin = 1j * 2 * np.pi * freqs_lin 
+            
+            z_total_lin, _, _, _ = calculate_z_vector_decomposed(
+                s_lin, vrm_l, vrm_rdcr, vrm_fc, vrm_cout, vrm_cesr, vrm_cesl, c_plane, cap_rows, freqs_lin
+            ) 
+            
+            t_axis = np.linspace(0, t_max, n_fft, endpoint=False) 
+            i_t = np.zeros_like(t_axis)
+            t_trigger = 2.0e-6 
+            
+            for idx, t_curr in enumerate(t_axis): 
+                if t_curr > t_trigger:
+                    i_t[idx] = i_transient * (1.0 - np.exp(-(t_curr - t_trigger) / (t_rise / 2.2)))
+
+            i_omega = np.fft.rfft(i_t)
+            v_omega_delta = i_omega * z_total_lin
+            v_t_delta = np.fft.irfft(v_omega_delta)
+            v_pdn_absolute = v_supply - v_t_delta
+            v_min_ripple_bound = v_supply * (1.0 - (ripple_pct / 100.0))
+
+            fig_freq = go.Figure()
+            fig_freq.add_trace(go.Scatter(x=list(freqs_log), y=list(np.abs(z_total_log)), mode='lines', name='Total Node Impedance (Z_node)', line=dict(color='#00bcff', width=4.5)))
+            fig_freq.add_trace(go.Scatter(x=list(freqs_log), y=list(np.abs(z_vrm_log)), mode='lines', name='VRM Phase Plant (Z_vrm)', line=dict(color='#cca43b', width=1.5, dash='dash')))
+            
+            if c_plane > 0:
+                fig_freq.add_trace(go.Scatter(x=list(freqs_log), y=list(np.abs(z_plane_log)), mode='lines', name='PCB Plane Cavity (Z_plane)', line=dict(color='#319795', width=1.5, dash='dot')))
+            
+            for label, z_track in individual_z_tracks:
+                fig_freq.add_trace(go.Scatter(x=list(freqs_log), y=list(z_track), mode='lines', name=label, line=dict(width=1.2, dash='dot')))
+            
+            fig_freq.add_trace(go.Scatter(x=list(freqs_log), y=[target_z] * len(freqs_log), mode='lines', name='Target Z Limit Boundary', line=dict(color='#b83280', width=2.5, dash='longdash')))
+
+            fig_freq.update_layout(
+                title=dict(text="PDN Impedance Profile", font=dict(color='#e2e8f0', size=14)),
+                paper_bgcolor='#1a202c', plot_bgcolor='#121620',
+                xaxis=dict(type="log", title=dict(text="Frequency (Hz)", font=dict(color='#a0aec0')), tickformat="s", gridcolor='#2d3748', tickfont=dict(color='#a0aec0')),
+                yaxis=dict(type="log", title=dict(text="Impedance (Ω)", font=dict(color='#a0aec0')), tickformat="s", gridcolor='#2d3748', tickfont=dict(color='#a0aec0')),
+                legend=dict(font=dict(color='#a0aec0', size=9), bgcolor='rgba(15,19,25,0.85)', yanchor="top", y=0.99, xanchor="right", x=0.99),
+                margin=dict(t=45, b=45, l=55, r=25)
+            )
+
+            fig_time = go.Figure()
+            fig_time.add_trace(go.Scatter(x=list(t_axis * 1e6), y=list(v_pdn_absolute), mode='lines', name='V_PDN Rail Voltage', line=dict(color='#319795', width=2.5)))
+            fig_time.add_trace(go.Scatter(x=list(t_axis * 1e6), y=[v_supply] * len(t_axis), mode='lines', name='Nominal V_DC', line=dict(color='#718096', width=1.5, dash='dot')))
+            fig_time.add_trace(go.Scatter(x=list(t_axis * 1e6), y=[v_min_ripple_bound] * len(t_axis), mode='lines', name='Minimum Allowed Limit', line=dict(color='#b83280', width=2, dash='dash')))
+            
+            fig_time.update_layout(
+                title=dict(text="Transient Scope Response (IFFT Droop Realization)", font=dict(color='#e2e8f0', size=14)),
+                paper_bgcolor='#1a202c', plot_bgcolor='#121620',
+                xaxis=dict(title=dict(text="Time (µs)", font=dict(color='#a0aec0')), gridcolor='#2d3748', tickfont=dict(color='#a0aec0')),
+                yaxis=dict(title=dict(text="Voltage (V)", font=dict(color='#a0aec0')), gridcolor='#2d3748', tickfont=dict(color='#a0aec0')),
+                legend=dict(font=dict(color='#a0aec0', size=10), bgcolor='rgba(0,0,0,0)', yanchor="bottom", y=0.01, xanchor="right", x=0.99),
+                margin=dict(t=45, b=45, l=55, r=25)
+            )
+
+            config_opts = '{"responsive": true, "displaylogo": false, "modeBarButtonsToRemove": ["toImage", "select2d", "lasso2d"]}'
+            js_config = window.JSON.parse(config_opts)
+            window.Plotly.newPlot('bode-plot', window.JSON.parse(fig_freq.to_json()).data, window.JSON.parse(fig_freq.to_json()).layout, js_config)
+            window.Plotly.newPlot('transient-plot', window.JSON.parse(fig_time.to_json()).data, window.JSON.parse(fig_time.to_json()).layout, js_config)
+            
+            document.getElementById('bode-loading').classList.add('opacity-0', 'pointer-events-none')
+            document.getElementById('transient-loading').classList.add('opacity-0', 'pointer-events-none')
+
+        window.update_plot_core = create_proxy(update_plot_core)
+        update_plot_core()
+    </py-script>
+</body>
+
+</html>
